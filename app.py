@@ -104,9 +104,15 @@ def render_main_view():
     if not rooms:
         st.sidebar.info("참가 가능한 방이 없습니다.")
     
+    join_room_id_to_process = None
     for room in rooms:
         if st.sidebar.button(f"🚪 {room['name']}", key=f"room_{room['id']}"):
-            st.session_state.join_room_id = room['id']
+            if user_location:
+                st.session_state.join_room_id = room['id']
+                join_room_id_to_process = room['id']
+            else:
+                st.sidebar.error("방에 참가하려면 먼저 브라우저의 위치 권한을 허용하고 페이지를 새로고침 해주세요.")
+                st.session_state.join_room_id = None # Clear any previous selection
 
     if 'join_room_id' in st.session_state and st.session_state.join_room_id:
         render_join_form(user_location)
@@ -120,6 +126,12 @@ def render_main_view():
     st_folium(m, use_container_width=True, height=500)
 
 def render_join_form(user_location):
+    # Double-check location exists before proceeding
+    if not user_location:
+        st.error("위치 정보를 가져올 수 없습니다. 참가를 다시 시도해주세요.")
+        st.session_state.join_room_id = None
+        return
+
     room_id = st.session_state.join_room_id
     conn = get_conn()
     room = conn.execute("SELECT * FROM rooms WHERE id = ?", (room_id,)).fetchone()
@@ -132,9 +144,7 @@ def render_join_form(user_location):
         join_submitted = st.form_submit_button("참가하기")
 
         if join_submitted:
-            if not user_location:
-                st.error("위치 정보를 가져올 수 없습니다. 브라우저의 위치 권한을 허용하고 새로고침 해주세요.")
-            elif not participant_name:
+            if not participant_name:
                 st.warning("이름을 입력하세요.")
             elif not bcrypt.checkpw(join_password.encode(), room['password_hash'].encode()):
                 st.error("비밀번호가 일치하지 않습니다.")
