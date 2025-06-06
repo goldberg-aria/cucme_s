@@ -3,4 +3,5 @@ streamlit-folium
 bcrypt
 python-dotenv
 streamlit-autorefresh
-streamlit-geolocation 
+streamlit-geolocation
+streamlit-js-eval 

@@ -7,7 +7,7 @@ import folium
 from streamlit_folium import st_folium
 from streamlit_autorefresh import st_autorefresh
 import datetime
-from streamlit_geolocation import st_geolocation
+from streamlit_js_eval import get_geolocation
 
 # 환경변수 로드
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -103,8 +103,8 @@ with st.form('join_room'):
     join_password = st.text_input('방 비밀번호', type='password')
     participant_name = st.text_input('참가자 이름')
 
-    # 위치 자동 감지
-    loc = st_geolocation()
+    # 위치 자동 감지 (streamlit-js-eval)
+    loc = get_geolocation()
     if loc and loc.get('latitude') and loc.get('longitude'):
         latitude = loc['latitude']
         longitude = loc['longitude']
