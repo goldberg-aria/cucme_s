@@ -70,14 +70,6 @@ init_db()
 # 앱 실행 시 만료 방 삭제
 delete_expired_rooms()
 
-# 자동 새로고침 (5초 간격)
-st_autorefresh(interval=5000, key="autorefresh")
-
-# 위치 자동 감지 (폼 바깥)
-loc = get_geolocation()
-if not (loc and loc.get('latitude') and loc.get('longitude')):
-    st_autorefresh(interval=2000, key="geo_autorefresh")
-
 # 방 생성 폼
 st.title('위치 공유 방 생성')
 with st.form('create_room'):
@@ -173,7 +165,9 @@ conn.close()
 selected_room = st.selectbox('방 선택', room_names, key='view_room')
 
 if selected_room:
-    delete_expired_rooms()
+    # 지도/참가자 보기 섹션에서만 자동 새로고침 실행
+    st_autorefresh(interval=5000, key="map_autorefresh")
+
     # 방 id 조회
     conn = get_conn()
     c = conn.cursor()
