@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 가상환경
+venv/
+
+# 환경변수
+.env
+
+# SQLite DB 파일
+*.db
+
+# macOS
+.DS_Store
+
+# Streamlit
+.streamlit/ 

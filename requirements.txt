@@ -1,0 +1,5 @@
+streamlit
+streamlit-folium
+bcrypt
+python-dotenv
+streamlit-autorefresh 
