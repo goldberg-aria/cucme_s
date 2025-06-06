@@ -106,6 +106,9 @@ with st.form('join_room'):
 
     # 위치 자동 감지 (streamlit-js-eval)
     loc = get_geolocation()
+    if not (loc and loc.get('latitude') and loc.get('longitude')):
+        st_autorefresh(interval=2000, key="geo_autorefresh")
+
     if loc and loc.get('latitude') and loc.get('longitude'):
         latitude = loc['latitude']
         longitude = loc['longitude']
