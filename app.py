@@ -119,10 +119,24 @@ def render_main_view():
 
     # --- 메인 화면: 지도 표시 ---
     st.header("내 위치 및 주변 탐색")
-    map_center = [user_location['latitude'], user_location['longitude']] if user_location else [37.5665, 126.9780]
+
+    # 위치 정보 유효성 검사 강화
+    has_location = user_location and 'latitude' in user_location and 'longitude' in user_location
+
+    if has_location:
+        map_center = [user_location['latitude'], user_location['longitude']]
+    else:
+        map_center = [37.5665, 126.9780]  # 기본값: 서울
+        st.info("브라우저의 위치 권한을 허용하고 새로고침하면 현재 위치가 지도에 표시됩니다.")
+
     m = folium.Map(location=map_center, zoom_start=14)
-    if user_location:
-        folium.Marker(location=map_center, popup="내 현재 위치", icon=folium.Icon(color='blue')).add_to(m)
+    if has_location:
+        folium.Marker(
+            location=[user_location['latitude'], user_location['longitude']],
+            popup="내 현재 위치",
+            icon=folium.Icon(color='blue')
+        ).add_to(m)
+
     st_folium(m, use_container_width=True, height=500)
 
 def render_join_form(user_location):
