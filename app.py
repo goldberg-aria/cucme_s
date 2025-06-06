@@ -98,6 +98,7 @@ with st.form('create_room'):
             st.success(f'방 "{room_name}" 이(가) 생성되었습니다!')
 
 st.header('방 참가')
+st.info('참가 버튼을 누르면 브라우저에서 위치 권한을 요청합니다.\n위치 권한을 허용하면 내 위치가 자동으로 입력됩니다.\n위치 정보가 입력될 때까지 참가 버튼이 비활성화됩니다.')
 with st.form('join_room'):
     join_room_name = st.text_input('참가할 방 이름')
     join_password = st.text_input('방 비밀번호', type='password')
@@ -109,12 +110,14 @@ with st.form('join_room'):
         latitude = loc['latitude']
         longitude = loc['longitude']
         st.success(f"내 위치: {latitude}, {longitude}")
+        btn_disabled = False
     else:
         latitude = None
         longitude = None
-        st.info('아래 "위치 정보 허용" 버튼을 눌러 위치를 받아오세요.')
+        st.warning('위치 권한을 허용하면 내 위치가 자동으로 입력됩니다.')
+        btn_disabled = True
 
-    join_submitted = st.form_submit_button('방 참가')
+    join_submitted = st.form_submit_button('방 참가', disabled=btn_disabled)
 
     if join_submitted:
         delete_expired_rooms()
