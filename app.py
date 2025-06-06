@@ -73,6 +73,11 @@ delete_expired_rooms()
 # 자동 새로고침 (5초 간격)
 st_autorefresh(interval=5000, key="autorefresh")
 
+# 위치 자동 감지 (폼 바깥)
+loc = get_geolocation()
+if not (loc and loc.get('latitude') and loc.get('longitude')):
+    st_autorefresh(interval=2000, key="geo_autorefresh")
+
 # 방 생성 폼
 st.title('위치 공유 방 생성')
 with st.form('create_room'):
@@ -103,11 +108,6 @@ with st.form('join_room'):
     join_room_name = st.text_input('참가할 방 이름')
     join_password = st.text_input('방 비밀번호', type='password')
     participant_name = st.text_input('참가자 이름')
-
-    # 위치 자동 감지 (streamlit-js-eval)
-    loc = get_geolocation()
-    if not (loc and loc.get('latitude') and loc.get('longitude')):
-        st_autorefresh(interval=2000, key="geo_autorefresh")
 
     if loc and loc.get('latitude') and loc.get('longitude'):
         latitude = loc['latitude']
