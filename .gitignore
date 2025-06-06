@@ -17,4 +17,8 @@ venv/
 .DS_Store
 
 # Streamlit
-.streamlit/ 
+.streamlit/
+
+DB_PATH=./app.db 
+
+streamlit-js-eval 

@@ -7,6 +7,7 @@ import folium
 from streamlit_folium import st_folium
 from streamlit_autorefresh import st_autorefresh
 import datetime
+from streamlit_geolocation import geolocation
 
 # 환경변수 로드
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -101,14 +102,24 @@ with st.form('join_room'):
     join_room_name = st.text_input('참가할 방 이름')
     join_password = st.text_input('방 비밀번호', type='password')
     participant_name = st.text_input('참가자 이름')
-    latitude = st.number_input('위도', format='%f')
-    longitude = st.number_input('경도', format='%f')
+
+    # 위치 자동 감지
+    loc = geolocation()
+    if loc and loc.get('latitude') and loc.get('longitude'):
+        latitude = loc['latitude']
+        longitude = loc['longitude']
+        st.success(f"내 위치: {latitude}, {longitude}")
+    else:
+        latitude = None
+        longitude = None
+        st.info('아래 "위치 정보 허용" 버튼을 눌러 위치를 받아오세요.')
+
     join_submitted = st.form_submit_button('방 참가')
 
     if join_submitted:
         delete_expired_rooms()
-        if not (join_room_name and join_password and participant_name):
-            st.warning('모든 항목을 입력하세요.')
+        if not (join_room_name and join_password and participant_name and latitude and longitude):
+            st.warning('모든 항목을 입력하세요. (위치 정보도 필요)')
         else:
             conn = get_conn()
             c = conn.cursor()
