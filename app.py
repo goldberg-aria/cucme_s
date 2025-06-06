@@ -103,33 +103,48 @@ with st.form('create_room'):
             st.success(f'방 "{room_name}" 이(가) 생성되었습니다!')
 
 st.header('방 참가')
-st.info('참가 버튼을 누르면 브라우저에서 위치 권한을 요청합니다.\n위치 권한을 허용하면 내 위치가 자동으로 입력됩니다.\n위치 정보가 입력될 때까지 참가 버튼이 비활성화됩니다.')
+
+st.warning(
+    """
+    **[중요] 위치 정보 사용법**
+
+    1. 브라우저가 위치 권한을 요청하면 **'허용'**을 클릭해주세요.
+    2. 권한 허용 후, **페이지를 직접 새로고침(F5 또는 브라우저 새로고침 버튼)** 해주세요.
+    3. 아래에 "✅ 위치가 확인되었습니다" 메시지가 표시되면 참가를 진행할 수 있습니다.
+    """
+)
+
+# 위치 자동 감지
+loc = get_geolocation()
+
 with st.form('join_room'):
     join_room_name = st.text_input('참가할 방 이름')
     join_password = st.text_input('방 비밀번호', type='password')
     participant_name = st.text_input('참가자 이름')
 
-    if loc and loc.get('latitude') and loc.get('longitude'):
-        latitude = loc['latitude']
-        longitude = loc['longitude']
-        st.success(f"내 위치: {latitude}, {longitude}")
-        btn_disabled = False
+    # Display status but don't disable the button
+    if loc and loc.get('latitude'):
+        st.success(f"✅ 위치가 확인되었습니다: {loc['latitude']}, {loc['longitude']}")
     else:
-        latitude = None
-        longitude = None
-        st.warning('위치 권한을 허용하면 내 위치가 자동으로 입력됩니다.')
-        btn_disabled = True
+        st.info("...위치 정보를 기다리는 중입니다. (권한 허용 후 페이지 새로고침 필요)")
 
-    join_submitted = st.form_submit_button('방 참가', disabled=btn_disabled)
+    join_submitted = st.form_submit_button('방 참가')
 
     if join_submitted:
-        delete_expired_rooms()
-        if not (join_room_name and join_password and participant_name and latitude and longitude):
-            st.warning('모든 항목을 입력하세요. (위치 정보도 필요)')
+        # Check for location again upon submission
+        if not (loc and loc.get('latitude')):
+            st.error("❗ 위치 정보를 가져오지 못했습니다. 페이지를 새로고침한 후 다시 시도해주세요.")
+        elif not (join_room_name and join_password and participant_name):
+            st.warning("❗ 방 이름, 비밀번호, 참가자 이름을 모두 입력하세요.")
         else:
+            # All good, proceed with submission
+            latitude = loc['latitude']
+            longitude = loc['longitude']
+
+            delete_expired_rooms()
+            
             conn = get_conn()
             c = conn.cursor()
-            # 방 정보 조회
             c.execute('SELECT id, password_hash FROM rooms WHERE name = ?', (join_room_name,))
             room = c.fetchone()
             if not room:
@@ -139,12 +154,12 @@ with st.form('join_room'):
                 if not bcrypt.checkpw(join_password.encode(), password_hash.encode()):
                     st.error('비밀번호가 일치하지 않습니다.')
                 else:
-                    # 참가자 정보 저장
                     c.execute('INSERT INTO participants (room_id, name, latitude, longitude) VALUES (?, ?, ?, ?)',
                               (room_id, participant_name, latitude, longitude))
                     conn.commit()
                     st.success(f'{participant_name}님이 방 "{join_room_name}"에 참가하였습니다!')
             conn.close()
+            st.rerun()
 
 st.header('방 참가자 위치 보기')
 
