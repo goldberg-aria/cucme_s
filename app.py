@@ -78,71 +78,100 @@ delete_expired_rooms()
 
 def get_location_js():
     js_code = """
-    new Promise((resolve) => {
+    (() => {
         console.log('위치 정보 요청 시작');
         
         if (!navigator.geolocation) {
             console.error('Geolocation API를 지원하지 않음');
-            resolve(JSON.stringify({error: "위치 정보를 지원하지 않는 브라우저입니다."}));
-            return;
+            return JSON.stringify({error: "위치 정보를 지원하지 않는 브라우저입니다."});
         }
         
-        const handleSuccess = (position) => {
-            console.log('위치 정보 획득 성공:', position);
-            const location = {
-                coords: {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy: position.coords.accuracy
-                }
-            };
-            console.log('변환된 위치 정보:', location);
-            resolve(JSON.stringify(location));
-        };
+        // 마지막으로 저장된 위치가 있다면 반환
+        const lastPosition = window.localStorage.getItem('lastPosition');
+        if (lastPosition) {
+            console.log('저장된 위치 정보 사용:', lastPosition);
+            return lastPosition;
+        }
         
-        const handleError = (error) => {
-            console.error('위치 정보 획득 실패:', error);
-            const errorMessages = {
-                1: "위치 정보 권한이 거부되었습니다.",
-                2: "위치를 확인할 수 없습니다.",
-                3: "위치 정보 요청 시간이 초과되었습니다."
-            };
-            const errorMessage = errorMessages[error.code] || error.message;
-            resolve(JSON.stringify({
-                error: errorMessage,
-                errorCode: error.code,
-                errorDetails: error.message
-            }));
-        };
-        
+        // 새로운 위치 정보 요청
         try {
+            const position = window._cachedPosition;
+            if (position) {
+                console.log('캐시된 위치 정보 사용:', position);
+                return JSON.stringify(position);
+            }
+            
             console.log('getCurrentPosition 호출...');
-            navigator.geolocation.getCurrentPosition(handleSuccess, handleError, {
-                enableHighAccuracy: true,
-                timeout: 5000,
-                maximumAge: 0
-            });
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    console.log('위치 정보 획득 성공:', position);
+                    const location = {
+                        coords: {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy: position.coords.accuracy
+                        }
+                    };
+                    console.log('변환된 위치 정보:', location);
+                    window._cachedPosition = location;
+                    window.localStorage.setItem('lastPosition', JSON.stringify(location));
+                },
+                (error) => {
+                    console.error('위치 정보 획득 실패:', error);
+                    const errorMessages = {
+                        1: "위치 정보 권한이 거부되었습니다.",
+                        2: "위치를 확인할 수 없습니다.",
+                        3: "위치 정보 요청 시간이 초과되었습니다."
+                    };
+                    window._locationError = {
+                        error: errorMessages[error.code] || error.message,
+                        errorCode: error.code,
+                        errorDetails: error.message
+                    };
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
+                }
+            );
+            
+            if (window._locationError) {
+                return JSON.stringify(window._locationError);
+            }
+            
+            return null;  // 아직 위치 정보를 받지 못함
         } catch (e) {
             console.error('getCurrentPosition 호출 실패:', e);
-            resolve(JSON.stringify({
+            return JSON.stringify({
                 error: "위치 정보 요청 실패",
                 errorDetails: e.toString()
-            }));
+            });
         }
-    }).then(result => {
-        console.log('Promise 결과:', result);
-        return result;
-    }).catch(error => {
-        console.error('Promise 에러:', error);
-        return JSON.stringify({
-            error: "Promise 처리 실패",
-            errorDetails: error.toString()
-        });
-    });
+    })();
     """
     logger.info("JavaScript 위치 정보 요청 시작")
     result = streamlit_js_eval(js_code=js_code, key='get_location')
     logger.info(f"JavaScript 위치 정보 응답: {result}")
+    
+    if not result:
+        # 위치 정보를 아직 받지 못했다면 잠시 대기 후 다시 시도
+        js_retry = """
+        (() => {
+            if (window._cachedPosition) {
+                return JSON.stringify(window._cachedPosition);
+            }
+            if (window._locationError) {
+                return JSON.stringify(window._locationError);
+            }
+            return null;
+        })();
+        """
+        import time
+        time.sleep(1)  # 1초 대기
+        result = streamlit_js_eval(js_code=js_retry, key='get_location_retry')
+        logger.info(f"JavaScript 위치 정보 재시도 응답: {result}")
+    
     return result
 
 def render_main_view():
@@ -157,39 +186,40 @@ def render_main_view():
         loc_button = st.button("내 위치 가져오기 🎯")
     
     if loc_button:
-        try:
-            logger.info("위치 정보 요청 버튼 클릭")
-            location_result = get_location_js()
-            
-            if location_result:
-                try:
-                    location_data = json.loads(location_result)
-                    logger.info(f"파싱된 위치 정보: {location_data}")
-                    
-                    if 'error' in location_data:
-                        error_msg = f"위치 정보를 가져오는데 실패했습니다: {location_data['error']}"
-                        if 'errorCode' in location_data:
-                            error_msg += f" (에러 코드: {location_data['errorCode']})"
-                        if 'errorDetails' in location_data:
-                            error_msg += f"\n상세: {location_data['errorDetails']}"
+        with st.spinner("위치 정보를 가져오는 중..."):
+            try:
+                logger.info("위치 정보 요청 버튼 클릭")
+                location_result = get_location_js()
+                
+                if location_result:
+                    try:
+                        location_data = json.loads(location_result)
+                        logger.info(f"파싱된 위치 정보: {location_data}")
+                        
+                        if 'error' in location_data:
+                            error_msg = f"위치 정보를 가져오는데 실패했습니다: {location_data['error']}"
+                            if 'errorCode' in location_data:
+                                error_msg += f" (에러 코드: {location_data['errorCode']})"
+                            if 'errorDetails' in location_data:
+                                error_msg += f"\n상세: {location_data['errorDetails']}"
+                            logger.error(error_msg)
+                            st.error(error_msg)
+                        else:
+                            logger.info("위치 정보 획득 성공")
+                            st.session_state.location = location_data
+                            user_location = location_data
+                            st.rerun()
+                    except json.JSONDecodeError as e:
+                        error_msg = f"위치 정보 형식이 올바르지 않습니다: {str(e)}"
                         logger.error(error_msg)
                         st.error(error_msg)
-                    else:
-                        logger.info("위치 정보 획득 성공")
-                        st.session_state.location = location_data
-                        user_location = location_data
-                        st.rerun()
-                except json.JSONDecodeError as e:
-                    error_msg = f"위치 정보 형식이 올바르지 않습니다: {str(e)}"
-                    logger.error(error_msg)
-                    st.error(error_msg)
-            else:
-                logger.error("위치 정보 응답이 없습니다")
-                st.error("위치 정보를 가져올 수 없습니다. 브라우저의 위치 권한을 확인해주세요.")
-        except Exception as e:
-            error_msg = f"위치 정보를 가져오는 중 오류가 발생했습니다: {str(e)}"
-            logger.error(error_msg)
-            st.error(error_msg)
+                else:
+                    logger.error("위치 정보 응답이 없습니다")
+                    st.error("위치 정보를 가져올 수 없습니다. 브라우저의 위치 권한을 확인하고 다시 시도해주세요.")
+            except Exception as e:
+                error_msg = f"위치 정보를 가져오는 중 오류가 발생했습니다: {str(e)}"
+                logger.error(error_msg)
+                st.error(error_msg)
     
     # 위치 정보 표시
     if user_location:
