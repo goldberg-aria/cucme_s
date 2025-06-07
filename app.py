@@ -113,7 +113,7 @@ def render_main_view():
         
     # 위치 정보 표시
     if st.session_state.location:
-        st.success(f"현재 위치: 위도 {st.session_state.location['latitude']:.6f}, 경도 {st.session_state.location['longitude']:.6f}")
+        st.success(f"현재 위치: 위도 {st.session_state.location['lat']:.6f}, 경도 {st.session_state.location['lng']:.6f}")
     
     # --- 사이드바: 방 생성 ---
     with st.sidebar.expander("새로운 방 만들기"):
@@ -166,10 +166,10 @@ def render_main_view():
     st.header("내 위치 및 주변 탐색")
 
     # 위치 정보 유효성 검사 강화
-    has_location = st.session_state.location and isinstance(st.session_state.location, dict) and 'latitude' in st.session_state.location
+    has_location = st.session_state.location and isinstance(st.session_state.location, dict) and 'lat' in st.session_state.location
 
     if has_location:
-        map_center = [st.session_state.location['latitude'], st.session_state.location['longitude']]
+        map_center = [st.session_state.location['lat'], st.session_state.location['lng']]
     else:
         map_center = [37.5665, 126.9780]  # 기본값: 서울
         st.info("'내 위치 가져오기' 버튼을 클릭하여 현재 위치를 확인하세요.")
