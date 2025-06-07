@@ -8,6 +8,7 @@ from streamlit_folium import st_folium
 from streamlit_autorefresh import st_autorefresh
 import datetime
 from streamlit_js_eval import streamlit_js_eval, get_geolocation
+import json
 
 # --- 기본 설정 및 초기화 ---
 st.set_page_config(layout="wide")
@@ -70,6 +71,38 @@ delete_expired_rooms()
 
 # --- UI 렌더링 함수 ---
 
+def get_location_js():
+    js_code = """
+    new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            resolve(JSON.stringify({error: "위치 정보를 지원하지 않는 브라우저입니다."}));
+            return;
+        }
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const location = {
+                    coords: {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    }
+                };
+                resolve(JSON.stringify(location));
+            },
+            (error) => {
+                resolve(JSON.stringify({error: error.message}));
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
+            }
+        );
+    })
+    """
+    return streamlit_js_eval(js_code=js_code, key='get_location')
+
 def render_main_view():
     st.sidebar.title("위치 공유 앱")
     
@@ -82,17 +115,29 @@ def render_main_view():
     user_location = None
     
     if loc_button:
-        user_location = get_geolocation()
-        if user_location:
-            st.session_state.location = user_location
-            # 위치 정보를 얻은 후 페이지 새로고침
-            st.rerun()
+        try:
+            location_result = get_location_js()
+            if location_result:
+                try:
+                    location_data = json.loads(location_result)
+                    if 'error' in location_data:
+                        st.error(f"위치 정보를 가져오는데 실패했습니다: {location_data['error']}")
+                    else:
+                        st.session_state.location = location_data
+                        st.rerun()
+                except json.JSONDecodeError:
+                    st.error("위치 정보 형식이 올바르지 않습니다.")
+        except Exception as e:
+            st.error(f"위치 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
+    
     elif st.session_state.location:
         user_location = st.session_state.location
     
     # 위치 정보 표시
     if st.session_state.location:
         st.success(f"현재 위치: 위도 {st.session_state.location['coords']['latitude']:.6f}, 경도 {st.session_state.location['coords']['longitude']:.6f}")
+        if 'coords' in st.session_state.location and 'accuracy' in st.session_state.location['coords']:
+            st.info(f"위치 정확도: {st.session_state.location['coords']['accuracy']:.0f}m")
     
     # --- 메인 화면: 지도 표시 ---
     st.header("내 위치 및 주변 탐색")
