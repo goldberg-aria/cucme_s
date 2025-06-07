@@ -52,6 +52,17 @@ def init_db():
             FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS location_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            participant_id INTEGER NOT NULL,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            accuracy REAL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -194,14 +205,33 @@ def render_main_view():
             if create_submitted:
                 if not (room_name and password and creator):
                     st.warning("모든 필드를 입력하세요.")
+                elif not user_location:
+                    st.error("방을 만들려면 먼저 위치 정보를 가져와야 합니다.")
                 else:
                     try:
                         conn = get_conn()
+                        # 방 생성
                         password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-                        conn.execute('INSERT INTO rooms (name, password_hash, creator, duration) VALUES (?, ?, ?, ?)',
-                                     (room_name, password_hash, creator, duration))
+                        c = conn.cursor()
+                        c.execute('INSERT INTO rooms (name, password_hash, creator, duration) VALUES (?, ?, ?, ?)',
+                                 (room_name, password_hash, creator, duration))
+                        room_id = c.lastrowid
+                        
+                        # 생성자를 참가자로 자동 추가
+                        c.execute('INSERT INTO participants (room_id, name, latitude, longitude) VALUES (?, ?, ?, ?)',
+                                 (room_id, creator, user_location['coords']['latitude'], user_location['coords']['longitude']))
+                        
                         conn.commit()
-                        st.success(f"방 '{room_name}'이 생성되었습니다.")
+                        
+                        # 방 정보 가져오기
+                        room = conn.execute("SELECT * FROM rooms WHERE id = ?", (room_id,)).fetchone()
+                        
+                        # 세션 상태 업데이트
+                        st.session_state.current_room = room
+                        st.session_state.participant_name = creator
+                        
+                        st.success(f"방 '{room_name}'이 생성되었고, 자동으로 참가되었습니다.")
+                        st.rerun()
                     except sqlite3.IntegrityError:
                         st.error("이미 존재하는 방 이름입니다.")
                     finally:
@@ -264,10 +294,24 @@ def render_join_form(user_location):
 
 def render_in_room_view():
     room = st.session_state.current_room
-    st_autorefresh(interval=5000, key="room_autorefresh")
+    # 2초마다 새로고침
+    st_autorefresh(interval=2000, key="room_autorefresh")
     
     conn = get_conn()
     participants = conn.execute("SELECT * FROM participants WHERE room_id = ?", (room['id'],)).fetchall()
+    
+    # 각 참가자의 이동 경로 가져오기
+    participant_paths = {}
+    for p in participants:
+        history = conn.execute("""
+            SELECT latitude, longitude 
+            FROM location_history 
+            WHERE participant_id = ? 
+            ORDER BY timestamp DESC 
+            LIMIT 10
+        """, (p['id'],)).fetchall()
+        participant_paths[p['id']] = [(h['latitude'], h['longitude']) for h in history]
+    
     conn.close()
 
     # --- 사이드바 ---
@@ -284,10 +328,59 @@ def render_in_room_view():
     st.header(f"'{room['name']}' 참가자 위치")
     map_center = [participants[0]['latitude'], participants[0]['longitude']] if participants else [37.5665, 126.9780]
     m = folium.Map(location=map_center, zoom_start=14)
-    for p in participants:
-        folium.Marker([p['latitude'], p['longitude']], popup=p['name']).add_to(m)
     
-    st_folium(m, use_container_width=True, height=500, returned_objects=[])
+    # 각 참가자의 위치와 이동 경로 표시
+    for p in participants:
+        # 현재 위치 마커
+        folium.Marker(
+            location=[p['latitude'], p['longitude']],
+            popup=p['name'],
+            icon=folium.Icon(color='red', icon='info-sign')
+        ).add_to(m)
+        
+        # 정확도 원
+        if 'location' in st.session_state and st.session_state.location:
+            accuracy = st.session_state.location['coords'].get('accuracy', 100)
+            folium.Circle(
+                location=[p['latitude'], p['longitude']],
+                radius=accuracy,
+                color='blue',
+                fill=True,
+                popup=f'정확도: {accuracy}m'
+            ).add_to(m)
+        
+        # 이동 경로 표시
+        if p['id'] in participant_paths and len(participant_paths[p['id']]) > 1:
+            folium.PolyLine(
+                locations=participant_paths[p['id']],
+                color='blue',
+                weight=2,
+                opacity=0.8
+            ).add_to(m)
+    
+    # 지도를 iframe으로 표시
+    st_folium(m, use_container_width=True, height=500)
+
+    # 현재 위치를 history에 저장
+    if 'location' in st.session_state and st.session_state.location:
+        conn = get_conn()
+        participant = conn.execute(
+            "SELECT id FROM participants WHERE room_id = ? AND name = ?", 
+            (room['id'], st.session_state.get('participant_name'))
+        ).fetchone()
+        
+        if participant:
+            conn.execute("""
+                INSERT INTO location_history (participant_id, latitude, longitude, accuracy)
+                VALUES (?, ?, ?, ?)
+            """, (
+                participant['id'],
+                st.session_state.location['coords']['latitude'],
+                st.session_state.location['coords']['longitude'],
+                st.session_state.location['coords'].get('accuracy', 0)
+            ))
+            conn.commit()
+        conn.close()
 
 # --- 메인 로직 라우터 ---
 if st.session_state.current_room:
