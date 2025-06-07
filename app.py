@@ -321,7 +321,17 @@ def render_in_room_view():
         st.sidebar.markdown(f"- **{p['name']}**")
     
     if st.sidebar.button("방 나가기"):
+        conn = get_conn()
+        # 현재 참가자 삭제
+        conn.execute("""
+            DELETE FROM participants 
+            WHERE room_id = ? AND name = ?
+        """, (room['id'], st.session_state.participant_name))
+        conn.commit()
+        conn.close()
+        
         st.session_state.current_room = None
+        st.session_state.participant_name = None
         st.rerun()
 
     # --- 메인 화면: 참가자 지도 ---
