@@ -78,104 +78,63 @@ delete_expired_rooms()
 # --- UI 렌더링 함수 ---
 
 def get_location_js():
-    # 위치 정보 요청 상태 초기화
-    init_js = """
-    if (typeof window._locationState === 'undefined') {
-        window._locationState = {
-            status: 'idle',
-            data: null,
-            error: null
-        };
-    }
-    return JSON.stringify(window._locationState);
-    """
-    state = streamlit_js_eval(js_code=init_js, key='init_location')
-    logger.info(f"위치 정보 상태 초기화: {state}")
-    
     # 위치 정보 요청
-    request_js = """
-    (() => {
+    js_code = """
+    new Promise((resolve) => {
         if (!navigator.geolocation) {
-            window._locationState = {
-                status: 'error',
-                error: "위치 정보를 지원하지 않는 브라우저입니다.",
-                data: null
-            };
-            return JSON.stringify(window._locationState);
+            resolve({
+                error: "위치 정보를 지원하지 않는 브라우저입니다."
+            });
+            return;
         }
 
-        window._locationState.status = 'loading';
-        
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                console.log('위치 정보 획득 성공:', position);
-                window._locationState = {
-                    status: 'success',
-                    data: {
-                        coords: {
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                            accuracy: position.coords.accuracy
-                        }
-                    },
-                    error: null
-                };
+                resolve({
+                    coords: {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    }
+                });
             },
             (error) => {
-                console.error('위치 정보 획득 실패:', error);
                 const errorMessages = {
                     1: "위치 정보 권한이 거부되었습니다.",
                     2: "위치를 확인할 수 없습니다.",
                     3: "위치 정보 요청 시간이 초과되었습니다."
                 };
-                window._locationState = {
-                    status: 'error',
+                resolve({
                     error: errorMessages[error.code] || error.message,
                     errorCode: error.code,
-                    errorDetails: error.message,
-                    data: null
-                };
+                    errorDetails: error.message
+                });
             },
             {
                 enableHighAccuracy: true,
-                timeout: 5000,
+                timeout: 10000,
                 maximumAge: 0
             }
         );
-        
-        return JSON.stringify(window._locationState);
-    })();
+    })
     """
-    streamlit_js_eval(js_code=request_js, key='request_location')
     
-    # 위치 정보 상태 확인 (최대 5초)
-    for _ in range(5):
-        check_js = "JSON.stringify(window._locationState)"
-        state = streamlit_js_eval(js_code=check_js, key=f'check_location_{_}')
-        
-        if state:
-            try:
-                state_data = json.loads(state)
-                logger.info(f"위치 정보 상태: {state_data}")
-                
-                if state_data['status'] == 'success':
-                    return json.dumps(state_data['data'])
-                elif state_data['status'] == 'error':
-                    return json.dumps({
-                        'error': state_data['error'],
-                        'errorCode': state_data.get('errorCode'),
-                        'errorDetails': state_data.get('errorDetails')
-                    })
-                elif state_data['status'] == 'loading':
-                    time.sleep(1)
-                    continue
-            except json.JSONDecodeError:
-                logger.error(f"상태 데이터 파싱 실패: {state}")
-                continue
-        
-        time.sleep(1)
+    logger.info("JavaScript 위치 정보 요청 시작")
+    result = streamlit_js_eval(js_code=js_code, key='get_location')
+    logger.info(f"JavaScript 위치 정보 응답: {result}")
     
-    return None
+    if not result:
+        logger.error("위치 정보 요청 실패")
+        return None
+        
+    try:
+        # result가 이미 객체일 수 있으므로 문자열 변환 시도
+        if isinstance(result, str):
+            result = json.loads(result)
+        return json.dumps(result)
+    except Exception as e:
+        logger.error(f"위치 정보 파싱 실패: {e}")
+        return None
 
 def render_main_view():
     st.sidebar.title("위치 공유 앱")
