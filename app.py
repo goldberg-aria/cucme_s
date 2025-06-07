@@ -79,41 +79,13 @@ def render_main_view():
         loc_button = st.button("내 위치 가져오기 🎯")
     
     if loc_button:
-        js_code = """
-        navigator.geolocation.getCurrentPosition(
-            function(position) {
-                const pos = {
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude
-                };
-                window.parent.postMessage({
-                    type: "streamlit:set_location",
-                    location: pos
-                }, "*");
-            },
-            function(error) {
-                console.error("위치 정보 획득 실패:", error);
-                window.parent.postMessage({
-                    type: "streamlit:location_error",
-                    error: error.message
-                }, "*");
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 5000,
-                maximumAge: 0
-            }
-        );
-        """
-        streamlit_js_eval(js_code=js_code)
-        
-    user_location = get_geolocation()
-    if user_location:
-        st.session_state.location = user_location
-        
+        user_location = get_geolocation()
+        if user_location:
+            st.session_state.location = user_location
+    
     # 위치 정보 표시
     if st.session_state.location:
-        st.success(f"현재 위치: 위도 {st.session_state.location['lat']:.6f}, 경도 {st.session_state.location['lng']:.6f}")
+        st.success(f"현재 위치: 위도 {st.session_state.location['coords']['latitude']:.6f}, 경도 {st.session_state.location['coords']['longitude']:.6f}")
     
     # --- 사이드바: 방 생성 ---
     with st.sidebar.expander("새로운 방 만들기"):
@@ -166,10 +138,14 @@ def render_main_view():
     st.header("내 위치 및 주변 탐색")
 
     # 위치 정보 유효성 검사 강화
-    has_location = st.session_state.location and isinstance(st.session_state.location, dict) and 'lat' in st.session_state.location
+    has_location = (st.session_state.location and 
+                   isinstance(st.session_state.location, dict) and 
+                   'coords' in st.session_state.location and
+                   'latitude' in st.session_state.location['coords'])
 
     if has_location:
-        map_center = [st.session_state.location['lat'], st.session_state.location['lng']]
+        map_center = [st.session_state.location['coords']['latitude'], 
+                     st.session_state.location['coords']['longitude']]
     else:
         map_center = [37.5665, 126.9780]  # 기본값: 서울
         st.info("'내 위치 가져오기' 버튼을 클릭하여 현재 위치를 확인하세요.")
@@ -210,7 +186,7 @@ def render_join_form(user_location):
             else:
                 conn = get_conn()
                 conn.execute('INSERT INTO participants (room_id, name, latitude, longitude) VALUES (?, ?, ?, ?)',
-                             (room['id'], participant_name, user_location['latitude'], user_location['longitude']))
+                             (room['id'], participant_name, user_location['coords']['latitude'], user_location['coords']['longitude']))
                 conn.commit()
                 conn.close()
                 st.session_state.current_room = room
