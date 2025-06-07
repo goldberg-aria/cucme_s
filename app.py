@@ -85,6 +85,8 @@ def render_main_view():
         user_location = get_geolocation()
         if user_location:
             st.session_state.location = user_location
+            # 위치 정보를 얻은 후 페이지 새로고침
+            st.rerun()
     elif st.session_state.location:
         user_location = st.session_state.location
     
@@ -92,6 +94,54 @@ def render_main_view():
     if st.session_state.location:
         st.success(f"현재 위치: 위도 {st.session_state.location['coords']['latitude']:.6f}, 경도 {st.session_state.location['coords']['longitude']:.6f}")
     
+    # --- 메인 화면: 지도 표시 ---
+    st.header("내 위치 및 주변 탐색")
+
+    # 위치 정보 유효성 검사 강화
+    has_location = (st.session_state.location and 
+                   isinstance(st.session_state.location, dict) and 
+                   'coords' in st.session_state.location and
+                   'latitude' in st.session_state.location['coords'])
+
+    if has_location:
+        map_center = [st.session_state.location['coords']['latitude'], 
+                     st.session_state.location['coords']['longitude']]
+        zoom_level = 15  # 모바일에서 더 확대된 뷰
+    else:
+        map_center = [37.5665, 126.9780]  # 기본값: 서울
+        zoom_level = 11
+        st.info("'내 위치 가져오기' 버튼을 클릭하여 현재 위치를 확인하세요.")
+
+    # 지도 생성 및 설정
+    m = folium.Map(location=map_center, 
+                   zoom_start=zoom_level,
+                   width='100%',
+                   height='100%')
+    
+    if has_location:
+        # 현재 위치 마커 추가
+        folium.Marker(
+            location=map_center,
+            popup="내 현재 위치",
+            icon=folium.Icon(color='blue', icon='info-sign')
+        ).add_to(m)
+        
+        # 현재 위치 원 추가
+        folium.Circle(
+            location=map_center,
+            radius=100,  # 반경 100m
+            color='blue',
+            fill=True,
+            popup='현재 위치 반경'
+        ).add_to(m)
+
+    # 지도를 iframe으로 표시
+    st_folium(m, 
+              use_container_width=True, 
+              height=500,
+              returned_objects=[],
+              key=f"map_{st.session_state.get('map_key', 0)}")  # 키를 변경하여 강제 새로고침
+
     # --- 사이드바: 방 생성 ---
     with st.sidebar.expander("새로운 방 만들기"):
         with st.form("create_room_form"):
@@ -138,32 +188,6 @@ def render_main_view():
 
     if 'join_room_id' in st.session_state and st.session_state.join_room_id:
         render_join_form(user_location)
-
-    # --- 메인 화면: 지도 표시 ---
-    st.header("내 위치 및 주변 탐색")
-
-    # 위치 정보 유효성 검사 강화
-    has_location = (st.session_state.location and 
-                   isinstance(st.session_state.location, dict) and 
-                   'coords' in st.session_state.location and
-                   'latitude' in st.session_state.location['coords'])
-
-    if has_location:
-        map_center = [st.session_state.location['coords']['latitude'], 
-                     st.session_state.location['coords']['longitude']]
-    else:
-        map_center = [37.5665, 126.9780]  # 기본값: 서울
-        st.info("'내 위치 가져오기' 버튼을 클릭하여 현재 위치를 확인하세요.")
-
-    m = folium.Map(location=map_center, zoom_start=14)
-    if has_location:
-        folium.Marker(
-            location=map_center,
-            popup="내 현재 위치",
-            icon=folium.Icon(color='blue', icon='info-sign')
-        ).add_to(m)
-
-    st_folium(m, use_container_width=True, height=500)
 
 def render_join_form(user_location):
     # Double-check location exists before proceeding
