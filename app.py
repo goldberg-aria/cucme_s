@@ -7,10 +7,14 @@ import folium
 from streamlit_folium import st_folium
 from streamlit_autorefresh import st_autorefresh
 import datetime
-from streamlit_js_eval import get_geolocation
+from streamlit_js_eval import streamlit_js_eval, get_geolocation
 
 # --- 기본 설정 및 초기화 ---
 st.set_page_config(layout="wide")
+
+# 세션 상태에 위치 정보 저장
+if 'location' not in st.session_state:
+    st.session_state.location = None
 
 # 환경변수 로드
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -70,15 +74,46 @@ def render_main_view():
     st.sidebar.title("위치 공유 앱")
     
     # 위치 정보 요청 및 처리
-    loc_button = st.button("내 위치 가져오기 🎯")
-    user_location = None
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        loc_button = st.button("내 위치 가져오기 🎯")
     
     if loc_button:
-        user_location = get_geolocation()
-        if user_location:
-            st.success("위치 정보를 성공적으로 가져왔습니다!")
-        else:
-            st.warning("위치 정보를 가져오려면 브라우저의 위치 권한을 허용해주세요.")
+        js_code = """
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const pos = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+                window.parent.postMessage({
+                    type: "streamlit:set_location",
+                    location: pos
+                }, "*");
+            },
+            function(error) {
+                console.error("위치 정보 획득 실패:", error);
+                window.parent.postMessage({
+                    type: "streamlit:location_error",
+                    error: error.message
+                }, "*");
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
+            }
+        );
+        """
+        streamlit_js_eval(js_code=js_code)
+        
+    user_location = get_geolocation()
+    if user_location:
+        st.session_state.location = user_location
+        
+    # 위치 정보 표시
+    if st.session_state.location:
+        st.success(f"현재 위치: 위도 {st.session_state.location['latitude']:.6f}, 경도 {st.session_state.location['longitude']:.6f}")
     
     # --- 사이드바: 방 생성 ---
     with st.sidebar.expander("새로운 방 만들기"):
@@ -131,11 +166,10 @@ def render_main_view():
     st.header("내 위치 및 주변 탐색")
 
     # 위치 정보 유효성 검사 강화
-    has_location = user_location and isinstance(user_location, dict) and 'latitude' in user_location and 'longitude' in user_location
+    has_location = st.session_state.location and isinstance(st.session_state.location, dict) and 'latitude' in st.session_state.location
 
     if has_location:
-        map_center = [user_location['latitude'], user_location['longitude']]
-        st.success(f"현재 위치: 위도 {user_location['latitude']:.6f}, 경도 {user_location['longitude']:.6f}")
+        map_center = [st.session_state.location['latitude'], st.session_state.location['longitude']]
     else:
         map_center = [37.5665, 126.9780]  # 기본값: 서울
         st.info("'내 위치 가져오기' 버튼을 클릭하여 현재 위치를 확인하세요.")
