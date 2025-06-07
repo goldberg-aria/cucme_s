@@ -10,6 +10,7 @@ import datetime
 from streamlit_js_eval import streamlit_js_eval, get_geolocation
 import json
 import logging
+import time
 
 # --- 기본 설정 및 초기화 ---
 st.set_page_config(layout="wide")
@@ -77,102 +78,104 @@ delete_expired_rooms()
 # --- UI 렌더링 함수 ---
 
 def get_location_js():
-    js_code = """
+    # 위치 정보 요청 상태 초기화
+    init_js = """
+    if (typeof window._locationState === 'undefined') {
+        window._locationState = {
+            status: 'idle',
+            data: null,
+            error: null
+        };
+    }
+    return JSON.stringify(window._locationState);
+    """
+    state = streamlit_js_eval(js_code=init_js, key='init_location')
+    logger.info(f"위치 정보 상태 초기화: {state}")
+    
+    # 위치 정보 요청
+    request_js = """
     (() => {
-        console.log('위치 정보 요청 시작');
-        
         if (!navigator.geolocation) {
-            console.error('Geolocation API를 지원하지 않음');
-            return JSON.stringify({error: "위치 정보를 지원하지 않는 브라우저입니다."});
+            window._locationState = {
+                status: 'error',
+                error: "위치 정보를 지원하지 않는 브라우저입니다.",
+                data: null
+            };
+            return JSON.stringify(window._locationState);
         }
+
+        window._locationState.status = 'loading';
         
-        // 마지막으로 저장된 위치가 있다면 반환
-        const lastPosition = window.localStorage.getItem('lastPosition');
-        if (lastPosition) {
-            console.log('저장된 위치 정보 사용:', lastPosition);
-            return lastPosition;
-        }
-        
-        // 새로운 위치 정보 요청
-        try {
-            const position = window._cachedPosition;
-            if (position) {
-                console.log('캐시된 위치 정보 사용:', position);
-                return JSON.stringify(position);
-            }
-            
-            console.log('getCurrentPosition 호출...');
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    console.log('위치 정보 획득 성공:', position);
-                    const location = {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                console.log('위치 정보 획득 성공:', position);
+                window._locationState = {
+                    status: 'success',
+                    data: {
                         coords: {
                             latitude: position.coords.latitude,
                             longitude: position.coords.longitude,
                             accuracy: position.coords.accuracy
                         }
-                    };
-                    console.log('변환된 위치 정보:', location);
-                    window._cachedPosition = location;
-                    window.localStorage.setItem('lastPosition', JSON.stringify(location));
-                },
-                (error) => {
-                    console.error('위치 정보 획득 실패:', error);
-                    const errorMessages = {
-                        1: "위치 정보 권한이 거부되었습니다.",
-                        2: "위치를 확인할 수 없습니다.",
-                        3: "위치 정보 요청 시간이 초과되었습니다."
-                    };
-                    window._locationError = {
-                        error: errorMessages[error.code] || error.message,
-                        errorCode: error.code,
-                        errorDetails: error.message
-                    };
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 5000,
-                    maximumAge: 0
-                }
-            );
-            
-            if (window._locationError) {
-                return JSON.stringify(window._locationError);
+                    },
+                    error: null
+                };
+            },
+            (error) => {
+                console.error('위치 정보 획득 실패:', error);
+                const errorMessages = {
+                    1: "위치 정보 권한이 거부되었습니다.",
+                    2: "위치를 확인할 수 없습니다.",
+                    3: "위치 정보 요청 시간이 초과되었습니다."
+                };
+                window._locationState = {
+                    status: 'error',
+                    error: errorMessages[error.code] || error.message,
+                    errorCode: error.code,
+                    errorDetails: error.message,
+                    data: null
+                };
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
             }
-            
-            return null;  // 아직 위치 정보를 받지 못함
-        } catch (e) {
-            console.error('getCurrentPosition 호출 실패:', e);
-            return JSON.stringify({
-                error: "위치 정보 요청 실패",
-                errorDetails: e.toString()
-            });
-        }
+        );
+        
+        return JSON.stringify(window._locationState);
     })();
     """
-    logger.info("JavaScript 위치 정보 요청 시작")
-    result = streamlit_js_eval(js_code=js_code, key='get_location')
-    logger.info(f"JavaScript 위치 정보 응답: {result}")
+    streamlit_js_eval(js_code=request_js, key='request_location')
     
-    if not result:
-        # 위치 정보를 아직 받지 못했다면 잠시 대기 후 다시 시도
-        js_retry = """
-        (() => {
-            if (window._cachedPosition) {
-                return JSON.stringify(window._cachedPosition);
-            }
-            if (window._locationError) {
-                return JSON.stringify(window._locationError);
-            }
-            return null;
-        })();
-        """
-        import time
-        time.sleep(1)  # 1초 대기
-        result = streamlit_js_eval(js_code=js_retry, key='get_location_retry')
-        logger.info(f"JavaScript 위치 정보 재시도 응답: {result}")
+    # 위치 정보 상태 확인 (최대 5초)
+    for _ in range(5):
+        check_js = "JSON.stringify(window._locationState)"
+        state = streamlit_js_eval(js_code=check_js, key=f'check_location_{_}')
+        
+        if state:
+            try:
+                state_data = json.loads(state)
+                logger.info(f"위치 정보 상태: {state_data}")
+                
+                if state_data['status'] == 'success':
+                    return json.dumps(state_data['data'])
+                elif state_data['status'] == 'error':
+                    return json.dumps({
+                        'error': state_data['error'],
+                        'errorCode': state_data.get('errorCode'),
+                        'errorDetails': state_data.get('errorDetails')
+                    })
+                elif state_data['status'] == 'loading':
+                    time.sleep(1)
+                    continue
+            except json.JSONDecodeError:
+                logger.error(f"상태 데이터 파싱 실패: {state}")
+                continue
+        
+        time.sleep(1)
     
-    return result
+    return None
 
 def render_main_view():
     st.sidebar.title("위치 공유 앱")
