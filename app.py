@@ -78,10 +78,15 @@ def render_main_view():
     with col1:
         loc_button = st.button("내 위치 가져오기 🎯")
     
+    # 위치 정보 초기화
+    user_location = None
+    
     if loc_button:
         user_location = get_geolocation()
         if user_location:
             st.session_state.location = user_location
+    elif st.session_state.location:
+        user_location = st.session_state.location
     
     # 위치 정보 표시
     if st.session_state.location:
@@ -128,8 +133,8 @@ def render_main_view():
                 st.session_state.join_room_id = room['id']
                 join_room_id_to_process = room['id']
             else:
-                st.sidebar.error("방에 참가하려면 먼저 브라우저의 위치 권한을 허용하고 페이지를 새로고침 해주세요.")
-                st.session_state.join_room_id = None # Clear any previous selection
+                st.sidebar.error("방에 참가하려면 먼저 '내 위치 가져오기' 버튼을 클릭하여 위치 정보를 확인해주세요.")
+                st.session_state.join_room_id = None
 
     if 'join_room_id' in st.session_state and st.session_state.join_room_id:
         render_join_form(user_location)
