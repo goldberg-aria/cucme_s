@@ -7,9 +7,9 @@ import folium
 from streamlit_folium import st_folium
 from streamlit_autorefresh import st_autorefresh
 import datetime
-from streamlit_js_eval import streamlit_js_eval, get_geolocation
 import json
 import logging
+from streamlit_javascript import st_javascript
 import time
 
 # --- 기본 설정 및 초기화 ---
@@ -78,77 +78,56 @@ delete_expired_rooms()
 # --- UI 렌더링 함수 ---
 
 def get_location_js():
-    # 위치 정보 요청 및 쿠키에 저장
-    request_js = """
-    if (!navigator.geolocation) {
-        const error = {
-            error: "위치 정보를 지원하지 않는 브라우저입니다."
-        };
-        document.cookie = `location_data=${JSON.stringify(error)}; path=/`;
-        return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const location = {
+    # 위치 정보 요청
+    js_code = """
+    async function getLocation() {
+        if (!navigator.geolocation) {
+            return {
+                error: "위치 정보를 지원하지 않는 브라우저입니다."
+            };
+        }
+        
+        try {
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            });
+            
+            return {
                 coords: {
                     latitude: position.coords.latitude,
                     longitude: position.coords.longitude,
                     accuracy: position.coords.accuracy
                 }
             };
-            document.cookie = `location_data=${JSON.stringify(location)}; path=/`;
-        },
-        (error) => {
+        } catch (error) {
             const errorMessages = {
                 1: "위치 정보 권한이 거부되었습니다.",
                 2: "위치를 확인할 수 없습니다.",
                 3: "위치 정보 요청 시간이 초과되었습니다."
             };
-            const errorData = {
+            return {
                 error: errorMessages[error.code] || error.message,
                 errorCode: error.code,
                 errorDetails: error.message
             };
-            document.cookie = `location_data=${JSON.stringify(errorData)}; path=/`;
-        },
-        {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
         }
-    );
+    }
+    getLocation();
     """
-    
-    # 기존 위치 데이터 쿠키 삭제
-    clear_js = """
-    document.cookie = "location_data=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    """
-    streamlit_js_eval(js_code=clear_js, key='clear_location')
     
     logger.info("JavaScript 위치 정보 요청 시작")
-    streamlit_js_eval(js_code=request_js, key='request_location')
+    result = st_javascript(js_code)
+    logger.info(f"JavaScript 위치 정보 응답: {result}")
     
-    # 위치 정보가 쿠키에 저장될 때까지 대기
-    for _ in range(5):  # 최대 5초 대기
-        time.sleep(1)
-        check_js = """
-        const cookies = document.cookie.split(';');
-        const locationCookie = cookies.find(c => c.trim().startsWith('location_data='));
-        return locationCookie ? locationCookie.split('=')[1] : null;
-        """
-        result = streamlit_js_eval(js_code=check_js, key=f'check_location_{_}')
-        logger.info(f"쿠키 확인 결과: {result}")
-        
-        if result:
-            try:
-                return result
-            except Exception as e:
-                logger.error(f"위치 정보 파싱 실패: {e}")
-                return None
+    if not result:
+        logger.error("위치 정보 요청 실패")
+        return None
     
-    logger.error("위치 정보 요청 시간 초과")
-    return None
+    return json.dumps(result)
 
 def render_main_view():
     st.sidebar.title("위치 공유 앱")

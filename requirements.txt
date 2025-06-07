@@ -1,7 +1,9 @@
-streamlit
-streamlit-folium
-bcrypt
-python-dotenv
-streamlit-autorefresh
+streamlit==1.31.1
+streamlit-folium==0.18.0
+bcrypt==4.1.2
+python-dotenv==1.0.1
+streamlit-autorefresh==1.0.0
 streamlit-geolocation
-streamlit-js-eval 
+streamlit-js-eval==0.1.5
+streamlit-javascript==0.1.5
+folium==0.15.1 
