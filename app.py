@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 import datetime
 import json
 import logging
-from streamlit_javascript import st_javascript
+from streamlit_geolocation import streamlit_geolocation
 import time
 
 # --- 기본 설정 및 초기화 ---
@@ -79,55 +79,25 @@ delete_expired_rooms()
 
 def get_location_js():
     # 위치 정보 요청
-    js_code = """
-    async function getLocation() {
-        if (!navigator.geolocation) {
-            return {
-                error: "위치 정보를 지원하지 않는 브라우저입니다."
-            };
-        }
-        
-        try {
-            const position = await new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 0
-                });
-            });
-            
-            return {
-                coords: {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy: position.coords.accuracy
-                }
-            };
-        } catch (error) {
-            const errorMessages = {
-                1: "위치 정보 권한이 거부되었습니다.",
-                2: "위치를 확인할 수 없습니다.",
-                3: "위치 정보 요청 시간이 초과되었습니다."
-            };
-            return {
-                error: errorMessages[error.code] || error.message,
-                errorCode: error.code,
-                errorDetails: error.message
-            };
-        }
-    }
-    getLocation();
-    """
+    logger.info("위치 정보 요청 시작")
+    location = streamlit_geolocation()
+    logger.info(f"위치 정보 응답: {location}")
     
-    logger.info("JavaScript 위치 정보 요청 시작")
-    result = st_javascript(js_code)
-    logger.info(f"JavaScript 위치 정보 응답: {result}")
-    
-    if not result:
+    if not location or location.get('latitude') is None or location.get('longitude') is None:
         logger.error("위치 정보 요청 실패")
         return None
     
-    return json.dumps(result)
+    try:
+        return {
+            'coords': {
+                'latitude': float(location['latitude']),
+                'longitude': float(location['longitude']),
+                'accuracy': float(location.get('accuracy', 0))
+            }
+        }
+    except Exception as e:
+        logger.error(f"위치 정보 파싱 실패: {str(e)}")
+        return None
 
 def render_main_view():
     st.sidebar.title("위치 공유 앱")
@@ -138,43 +108,25 @@ def render_main_view():
     # 위치 정보 요청 및 처리
     col1, col2 = st.columns([1, 3])
     with col1:
-        loc_button = st.button("내 위치 가져오기 🎯")
-    
-    if loc_button:
-        with st.spinner("위치 정보를 가져오는 중..."):
+        loc = streamlit_geolocation()
+        if loc:
             try:
-                logger.info("위치 정보 요청 버튼 클릭")
-                location_result = get_location_js()
-                
-                if location_result:
-                    try:
-                        location_data = json.loads(location_result)
-                        logger.info(f"파싱된 위치 정보: {location_data}")
-                        
-                        if 'error' in location_data:
-                            error_msg = f"위치 정보를 가져오는데 실패했습니다: {location_data['error']}"
-                            if 'errorCode' in location_data:
-                                error_msg += f" (에러 코드: {location_data['errorCode']})"
-                            if 'errorDetails' in location_data:
-                                error_msg += f"\n상세: {location_data['errorDetails']}"
-                            logger.error(error_msg)
-                            st.error(error_msg)
-                        else:
-                            logger.info("위치 정보 획득 성공")
-                            st.session_state.location = location_data
-                            user_location = location_data
-                            st.rerun()
-                    except json.JSONDecodeError as e:
-                        error_msg = f"위치 정보 형식이 올바르지 않습니다: {str(e)}"
-                        logger.error(error_msg)
-                        st.error(error_msg)
+                if loc.get('latitude') and loc.get('longitude'):
+                    user_location = {
+                        'coords': {
+                            'latitude': float(loc['latitude']),
+                            'longitude': float(loc['longitude']),
+                            'accuracy': float(loc.get('accuracy', 0))
+                        }
+                    }
+                    st.session_state.location = user_location
+                    st.success("위치 정보를 성공적으로 가져왔습니다!")
                 else:
-                    logger.error("위치 정보 응답이 없습니다")
-                    st.error("위치 정보를 가져올 수 없습니다. 브라우저의 위치 권한을 확인하고 다시 시도해주세요.")
+                    st.error("위치 정보를 가져올 수 없습니다. 브라우저의 위치 권한을 확인해주세요.")
             except Exception as e:
-                error_msg = f"위치 정보를 가져오는 중 오류가 발생했습니다: {str(e)}"
-                logger.error(error_msg)
-                st.error(error_msg)
+                st.error(f"위치 정보 처리 중 오류가 발생했습니다: {str(e)}")
+        else:
+            st.info("위치 정보를 가져오려면 브라우저의 위치 권한을 허용해주세요.")
     
     # 위치 정보 표시
     if user_location:

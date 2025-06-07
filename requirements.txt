@@ -4,6 +4,5 @@ bcrypt==4.1.2
 python-dotenv==1.0.1
 streamlit-autorefresh==1.0.0
 streamlit-geolocation
-streamlit-js-eval==0.1.5
-streamlit-javascript==0.1.5
-folium==0.15.1 
+folium==0.15.1
+streamlit-js-eval==0.1.5 
