@@ -78,63 +78,77 @@ delete_expired_rooms()
 # --- UI 렌더링 함수 ---
 
 def get_location_js():
-    # 위치 정보 요청
-    js_code = """
-    new Promise((resolve) => {
-        if (!navigator.geolocation) {
-            resolve({
-                error: "위치 정보를 지원하지 않는 브라우저입니다."
-            });
-            return;
-        }
+    # 위치 정보 요청 및 쿠키에 저장
+    request_js = """
+    if (!navigator.geolocation) {
+        const error = {
+            error: "위치 정보를 지원하지 않는 브라우저입니다."
+        };
+        document.cookie = `location_data=${JSON.stringify(error)}; path=/`;
+        return;
+    }
 
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                resolve({
-                    coords: {
-                        latitude: position.coords.latitude,
-                        longitude: position.coords.longitude,
-                        accuracy: position.coords.accuracy
-                    }
-                });
-            },
-            (error) => {
-                const errorMessages = {
-                    1: "위치 정보 권한이 거부되었습니다.",
-                    2: "위치를 확인할 수 없습니다.",
-                    3: "위치 정보 요청 시간이 초과되었습니다."
-                };
-                resolve({
-                    error: errorMessages[error.code] || error.message,
-                    errorCode: error.code,
-                    errorDetails: error.message
-                });
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            }
-        );
-    })
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const location = {
+                coords: {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                }
+            };
+            document.cookie = `location_data=${JSON.stringify(location)}; path=/`;
+        },
+        (error) => {
+            const errorMessages = {
+                1: "위치 정보 권한이 거부되었습니다.",
+                2: "위치를 확인할 수 없습니다.",
+                3: "위치 정보 요청 시간이 초과되었습니다."
+            };
+            const errorData = {
+                error: errorMessages[error.code] || error.message,
+                errorCode: error.code,
+                errorDetails: error.message
+            };
+            document.cookie = `location_data=${JSON.stringify(errorData)}; path=/`;
+        },
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        }
+    );
     """
     
-    logger.info("JavaScript 위치 정보 요청 시작")
-    result = streamlit_js_eval(js_code=js_code, key='get_location')
-    logger.info(f"JavaScript 위치 정보 응답: {result}")
+    # 기존 위치 데이터 쿠키 삭제
+    clear_js = """
+    document.cookie = "location_data=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    """
+    streamlit_js_eval(js_code=clear_js, key='clear_location')
     
-    if not result:
-        logger.error("위치 정보 요청 실패")
-        return None
+    logger.info("JavaScript 위치 정보 요청 시작")
+    streamlit_js_eval(js_code=request_js, key='request_location')
+    
+    # 위치 정보가 쿠키에 저장될 때까지 대기
+    for _ in range(5):  # 최대 5초 대기
+        time.sleep(1)
+        check_js = """
+        const cookies = document.cookie.split(';');
+        const locationCookie = cookies.find(c => c.trim().startsWith('location_data='));
+        return locationCookie ? locationCookie.split('=')[1] : null;
+        """
+        result = streamlit_js_eval(js_code=check_js, key=f'check_location_{_}')
+        logger.info(f"쿠키 확인 결과: {result}")
         
-    try:
-        # result가 이미 객체일 수 있으므로 문자열 변환 시도
-        if isinstance(result, str):
-            result = json.loads(result)
-        return json.dumps(result)
-    except Exception as e:
-        logger.error(f"위치 정보 파싱 실패: {e}")
-        return None
+        if result:
+            try:
+                return result
+            except Exception as e:
+                logger.error(f"위치 정보 파싱 실패: {e}")
+                return None
+    
+    logger.error("위치 정보 요청 시간 초과")
+    return None
 
 def render_main_view():
     st.sidebar.title("위치 공유 앱")
