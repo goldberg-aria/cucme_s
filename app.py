@@ -115,15 +115,30 @@ def get_location_js():
             }));
         };
         
-        const options = {
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0
-        };
-        
-        console.log('getCurrentPosition 호출...');
-        navigator.geolocation.getCurrentPosition(handleSuccess, handleError, options);
-    })
+        try {
+            console.log('getCurrentPosition 호출...');
+            navigator.geolocation.getCurrentPosition(handleSuccess, handleError, {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
+            });
+        } catch (e) {
+            console.error('getCurrentPosition 호출 실패:', e);
+            resolve(JSON.stringify({
+                error: "위치 정보 요청 실패",
+                errorDetails: e.toString()
+            }));
+        }
+    }).then(result => {
+        console.log('Promise 결과:', result);
+        return result;
+    }).catch(error => {
+        console.error('Promise 에러:', error);
+        return JSON.stringify({
+            error: "Promise 처리 실패",
+            errorDetails: error.toString()
+        });
+    });
     """
     logger.info("JavaScript 위치 정보 요청 시작")
     result = streamlit_js_eval(js_code=js_code, key='get_location')
@@ -133,13 +148,13 @@ def get_location_js():
 def render_main_view():
     st.sidebar.title("위치 공유 앱")
     
+    # 위치 정보 초기화
+    user_location = st.session_state.location if 'location' in st.session_state else None
+    
     # 위치 정보 요청 및 처리
     col1, col2 = st.columns([1, 3])
     with col1:
         loc_button = st.button("내 위치 가져오기 🎯")
-    
-    # 위치 정보 초기화
-    user_location = None
     
     if loc_button:
         try:
@@ -162,38 +177,38 @@ def render_main_view():
                     else:
                         logger.info("위치 정보 획득 성공")
                         st.session_state.location = location_data
+                        user_location = location_data
                         st.rerun()
                 except json.JSONDecodeError as e:
                     error_msg = f"위치 정보 형식이 올바르지 않습니다: {str(e)}"
                     logger.error(error_msg)
                     st.error(error_msg)
+            else:
+                logger.error("위치 정보 응답이 없습니다")
+                st.error("위치 정보를 가져올 수 없습니다. 브라우저의 위치 권한을 확인해주세요.")
         except Exception as e:
             error_msg = f"위치 정보를 가져오는 중 오류가 발생했습니다: {str(e)}"
             logger.error(error_msg)
             st.error(error_msg)
     
-    elif st.session_state.location:
-        user_location = st.session_state.location
-        logger.info("세션에서 위치 정보 복원")
-    
     # 위치 정보 표시
-    if st.session_state.location:
-        st.success(f"현재 위치: 위도 {st.session_state.location['coords']['latitude']:.6f}, 경도 {st.session_state.location['coords']['longitude']:.6f}")
-        if 'coords' in st.session_state.location and 'accuracy' in st.session_state.location['coords']:
-            st.info(f"위치 정확도: {st.session_state.location['coords']['accuracy']:.0f}m")
+    if user_location:
+        st.success(f"현재 위치: 위도 {user_location['coords']['latitude']:.6f}, 경도 {user_location['coords']['longitude']:.6f}")
+        if 'coords' in user_location and 'accuracy' in user_location['coords']:
+            st.info(f"위치 정확도: {user_location['coords']['accuracy']:.0f}m")
     
     # --- 메인 화면: 지도 표시 ---
     st.header("내 위치 및 주변 탐색")
 
     # 위치 정보 유효성 검사 강화
-    has_location = (st.session_state.location and 
-                   isinstance(st.session_state.location, dict) and 
-                   'coords' in st.session_state.location and
-                   'latitude' in st.session_state.location['coords'])
+    has_location = (user_location and 
+                   isinstance(user_location, dict) and 
+                   'coords' in user_location and
+                   'latitude' in user_location['coords'])
 
     if has_location:
-        map_center = [st.session_state.location['coords']['latitude'], 
-                     st.session_state.location['coords']['longitude']]
+        map_center = [user_location['coords']['latitude'], 
+                     user_location['coords']['longitude']]
         zoom_level = 15  # 모바일에서 더 확대된 뷰
     else:
         map_center = [37.5665, 126.9780]  # 기본값: 서울
